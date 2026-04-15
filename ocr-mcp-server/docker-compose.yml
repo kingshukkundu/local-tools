@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  # vLLM Server for LightOnOCR with GPU support
+  vllm-server:
+    image: vllm/vllm-openai:latest
+    container_name: ocr-vllm-server
+    ports:
+      - "8000:8000"
+    volumes:
+      - model-cache:/root/.cache/huggingface
+    environment:
+      - PYTHONUNBUFFERED=1
+    ipc: host
+    command: >
+      --model lightonai/LightOnOCR-2-1B
+      --limit-mm-per-prompt '{"image": 1}'
+      --mm-processor-cache-gb 0
+      --no-enable-prefix-caching
+      --gpu-memory-utilization 0.7
+      --host 0.0.0.0
+      --port 8000
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # MCP Server
+  mcp-server:
+    build:
+      context: .
+      target: production
+    container_name: ocr-mcp-server
+    ports:
+      - "8001:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - VLLM_ENDPOINT=http://vllm-server:8000
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+    command: ["python", "-m", "mcp_server.server"]
+    restart: unless-stopped
+    depends_on:
+      - vllm-server
+
+  # Web Application
+  web-app:
+    build:
+      context: .
+      target: production
+    container_name: ocr-web-app
+    ports:
+      - "8080:8080"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - VLLM_ENDPOINT=http://vllm-server:8000
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+    restart: unless-stopped
+    depends_on:
+      - vllm-server
+
+volumes:
+  model-cache:

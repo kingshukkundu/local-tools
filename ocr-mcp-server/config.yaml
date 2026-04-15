@@ -1,0 +1,19 @@
+# OCR MCP Server Configuration
+
+model:
+  # Model class to use. Format: module.path.ClassName
+  # To switch models, change this to point to a different model class
+  class: "models.vllm_ocr.VLLMOcrModel"
+
+  # Parameters to pass to the model constructor
+  params:
+    model_name: "lightonai/LightOnOCR-2-1B"
+    endpoint: "http://localhost:8000"  # vLLM server endpoint (can be overridden by VLLM_ENDPOINT env var)
+
+# Transformers configuration (for CPU-only inference):
+# To use direct Transformers without vLLM, uncomment the following:
+# model:
+#   class: "models.lighton_ocr.LightOnOCRModel"
+#   params:
+#     model_name: "lightonai/LightOnOCR-2-1B"
+#     device: "auto"
