@@ -108,6 +108,13 @@
         const loadingSection = document.getElementById('loadingSection');
         const dropZone = document.getElementById('dropZone');
 
+        // Initialize marked with HTML rendering enabled
+        marked.setOptions({
+            gfm: true,
+            breaks: true,
+            sanitize: false
+        });
+
         // State variables
         let isRendered = true;
         let showImages = true;
@@ -200,13 +207,42 @@
         // Copy to clipboard
         copyBtn.addEventListener('click', async () => {
             try {
-                await navigator.clipboard.writeText(extractedText);
-                copyBtn.textContent = 'Copied!';
+                // Try modern Clipboard API first
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(extractedText);
+                    copyBtn.textContent = 'Copied!';
+                    setTimeout(() => {
+                        copyBtn.textContent = 'Copy to Clipboard';
+                    }, 2000);
+                } else {
+                    // Fallback to older method
+                    const textArea = document.createElement('textarea');
+                    textArea.value = extractedText;
+                    textArea.style.position = 'fixed';
+                    textArea.style.left = '-999999px';
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    try {
+                        document.execCommand('copy');
+                        copyBtn.textContent = 'Copied!';
+                        setTimeout(() => {
+                            copyBtn.textContent = 'Copy to Clipboard';
+                        }, 2000);
+                    } catch (err) {
+                        console.error('Fallback copy failed:', err);
+                        copyBtn.textContent = 'Copy Failed';
+                        setTimeout(() => {
+                            copyBtn.textContent = 'Copy to Clipboard';
+                        }, 2000);
+                    }
+                    document.body.removeChild(textArea);
+                }
+            } catch (error) {
+                console.error('Failed to copy:', error);
+                copyBtn.textContent = 'Copy Failed';
                 setTimeout(() => {
                     copyBtn.textContent = 'Copy to Clipboard';
                 }, 2000);
-            } catch (error) {
-                console.error('Failed to copy:', error);
             }
         });
 
@@ -228,21 +264,50 @@
         function displayResult() {
             if (!extractedText) return;
 
+            console.log('displayResult called - isRendered:', isRendered, 'showImages:', showImages);
+            console.log('extractedText length:', extractedText.length);
+            console.log('extractedText preview:', extractedText.substring(0, 200));
+
             let displayContent = extractedText;
 
+            // Decode HTML entities if present
+            const textArea = document.createElement('textarea');
+            textArea.innerHTML = displayContent;
+            displayContent = textArea.value;
+
+            console.log('After HTML decoding, displayContent preview:', displayContent.substring(0, 200));
+
             if (showImages && uploadedImageData) {
-                // Replace image references like "image 1", "image 2", etc. with actual image tags
-                displayContent = displayContent.replace(/image\s*\d+/gi, (match) => {
-                    return `<img src="${uploadedImageData}" alt="${match}" class="max-w-full h-auto my-4 rounded-lg border border-gray-300">`;
+                // Convert image references like "image 1", "image 2", etc. to markdown image syntax
+                // This handles patterns like "image 1", "Image 1", "image1", etc.
+                displayContent = displayContent.replace(/!?\[?\s*image\s*\d+\s*\]?/gi, (match) => {
+                    // Extract the image number
+                    const matchLower = match.toLowerCase();
+                    const imageNum = matchLower.match(/\d+/)?.[0] || '1';
+                    return `
+![${match.trim()}](${uploadedImageData})
+`;
                 });
+            } else {
+                // Remove markdown image syntax when showImages is false
+                // This prevents broken image icons from showing
+                displayContent = displayContent.replace(/!\[([^\]]*)\]\([^)]+\)/gi, '$1');
+                displayContent = displayContent.replace(/<img[^>]*>/gi, '');
             }
 
             if (isRendered) {
-                // Render markdown
+                console.log('Rendering as markdown with HTML support');
+                // Render markdown with marked (handles both HTML tags and markdown syntax)
                 resultText.innerHTML = marked.parse(displayContent);
                 resultText.classList.remove('whitespace-pre-wrap');
                 resultText.classList.add('prose', 'max-w-none');
+                
+                // Add styling to images
+                resultText.querySelectorAll('img').forEach(img => {
+                    img.classList.add('max-w-full', 'h-auto', 'my-4', 'rounded-lg', 'border', 'border-gray-300');
+                });
             } else {
+                console.log('Showing as raw text');
                 // Show raw text
                 resultText.textContent = displayContent;
                 resultText.classList.add('whitespace-pre-wrap');
