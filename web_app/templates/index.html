@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OCR Text Extractor</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <div class="container mx-auto px-4 py-8">
@@ -49,16 +50,30 @@
                 <h2 class="text-xl font-semibold text-gray-800 mb-4">Extracted Text</h2>
                 <div class="flex justify-between items-center mb-3">
                     <span id="filenameDisplay" class="text-sm text-gray-600"></span>
-                    <button 
-                        id="copyBtn"
-                        class="bg-green-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-green-700 transition duration-200"
-                    >
-                        Copy to Clipboard
-                    </button>
+                    <div class="flex gap-2">
+                        <button 
+                            id="renderToggle"
+                            class="bg-purple-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-purple-700 transition duration-200 text-sm"
+                        >
+                            Rendered
+                        </button>
+                        <button 
+                            id="imageToggle"
+                            class="bg-orange-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-orange-700 transition duration-200 text-sm"
+                        >
+                            Show Images
+                        </button>
+                        <button 
+                            id="copyBtn"
+                            class="bg-green-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-green-700 transition duration-200"
+                        >
+                            Copy to Clipboard
+                        </button>
+                    </div>
                 </div>
                 <div 
                     id="resultText" 
-                    class="bg-gray-50 p-4 rounded-lg border border-gray-200 min-h-32 whitespace-pre-wrap font-mono text-sm"
+                    class="bg-gray-50 p-4 rounded-lg border border-gray-200 min-h-32 font-mono text-sm"
                 ></div>
             </div>
 
@@ -86,10 +101,18 @@
         const resultText = document.getElementById('resultText');
         const filenameDisplay = document.getElementById('filenameDisplay');
         const copyBtn = document.getElementById('copyBtn');
+        const renderToggle = document.getElementById('renderToggle');
+        const imageToggle = document.getElementById('imageToggle');
         const errorSection = document.getElementById('errorSection');
         const errorMessage = document.getElementById('errorMessage');
         const loadingSection = document.getElementById('loadingSection');
         const dropZone = document.getElementById('dropZone');
+
+        // State variables
+        let isRendered = true;
+        let showImages = true;
+        let extractedText = '';
+        let uploadedImageData = '';
 
         // Handle drop zone click
         dropZone.addEventListener('click', () => {
@@ -125,6 +148,7 @@
                 const reader = new FileReader();
                 reader.onload = (e) => {
                     imagePreview.src = e.target.result;
+                    uploadedImageData = e.target.result;
                     previewSection.classList.remove('hidden');
                     dropZone.querySelector('p').textContent = `Selected: ${file.name}`;
                 };
@@ -157,9 +181,10 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    resultText.textContent = data.text;
+                    extractedText = data.text;
                     filenameDisplay.textContent = data.filename || 'Uploaded image';
                     resultSection.classList.remove('hidden');
+                    displayResult();
                 } else {
                     throw new Error(data.error || 'Failed to extract text');
                 }
@@ -175,7 +200,7 @@
         // Copy to clipboard
         copyBtn.addEventListener('click', async () => {
             try {
-                await navigator.clipboard.writeText(resultText.textContent);
+                await navigator.clipboard.writeText(extractedText);
                 copyBtn.textContent = 'Copied!';
                 setTimeout(() => {
                     copyBtn.textContent = 'Copy to Clipboard';
@@ -184,6 +209,46 @@
                 console.error('Failed to copy:', error);
             }
         });
+
+        // Toggle rendered/raw view
+        renderToggle.addEventListener('click', () => {
+            isRendered = !isRendered;
+            renderToggle.textContent = isRendered ? 'Rendered' : 'Raw';
+            displayResult();
+        });
+
+        // Toggle show/hide images
+        imageToggle.addEventListener('click', () => {
+            showImages = !showImages;
+            imageToggle.textContent = showImages ? 'Show Images' : 'Hide Images';
+            displayResult();
+        });
+
+        // Display result based on current toggle states
+        function displayResult() {
+            if (!extractedText) return;
+
+            let displayContent = extractedText;
+
+            if (showImages && uploadedImageData) {
+                // Replace image references like "image 1", "image 2", etc. with actual image tags
+                displayContent = displayContent.replace(/image\s*\d+/gi, (match) => {
+                    return `<img src="${uploadedImageData}" alt="${match}" class="max-w-full h-auto my-4 rounded-lg border border-gray-300">`;
+                });
+            }
+
+            if (isRendered) {
+                // Render markdown
+                resultText.innerHTML = marked.parse(displayContent);
+                resultText.classList.remove('whitespace-pre-wrap');
+                resultText.classList.add('prose', 'max-w-none');
+            } else {
+                // Show raw text
+                resultText.textContent = displayContent;
+                resultText.classList.add('whitespace-pre-wrap');
+                resultText.classList.remove('prose', 'max-w-none');
+            }
+        }
     </script>
 </body>
 </html>
