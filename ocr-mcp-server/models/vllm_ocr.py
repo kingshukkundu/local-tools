@@ -111,11 +111,14 @@ class VLLMOcrModel(OCRModel):
 
         # Make request to vLLM server
         try:
-            response = requests.post(self.api_url, json=payload, timeout=300)
+            response = requests.post(self.api_url, json=payload, timeout=60)
             response.raise_for_status()
             result = response.json()
             text = result['choices'][0]['message']['content']
             return text
+        except requests.exceptions.Timeout:
+            logger.error("Timeout calling vLLM server after 60 seconds")
+            raise TimeoutError("vLLM server request timed out after 60 seconds")
         except requests.exceptions.RequestException as e:
             logger.error(f"Error calling vLLM server: {e}")
             raise
