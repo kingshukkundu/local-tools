@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from typing import Optional
 import importlib
+import io
+from PIL import Image
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
@@ -19,6 +21,108 @@ from models.base import OCRModel
 
 # Get vLLM endpoint from environment variable
 VLLM_ENDPOINT = os.getenv("VLLM_ENDPOINT", "http://localhost:8000")
+
+
+def convert_heic_to_jpeg(image_bytes: bytes) -> bytes:
+    """
+    Convert HEIC/HEIF image to JPEG format.
+    
+    Args:
+        image_bytes: HEIC/HEIF image bytes
+        
+    Returns:
+        JPEG image bytes
+    """
+    try:
+        from pillow_heif import register_heif_opener
+        register_heif_opener()
+        
+        # Open HEIC image
+        image = Image.open(io.BytesIO(image_bytes))
+        
+        # Convert to RGB if necessary
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        # Save as JPEG
+        output = io.BytesIO()
+        image.save(output, format='JPEG', quality=95)
+        output.seek(0)
+        
+        return output.read()
+    except ImportError:
+        raise HTTPException(
+            status_code=500, 
+            detail="HEIC support not available. Please install pillow-heif."
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to convert HEIC: {str(e)}")
+
+
+def convert_pdf_to_jpeg(pdf_bytes: bytes) -> bytes:
+    """
+    Convert PDF to JPEG format (first page).
+    
+    Args:
+        pdf_bytes: PDF file bytes
+        
+    Returns:
+        JPEG image bytes
+    """
+    try:
+        from pdf2image import convert_from_bytes
+        
+        # Convert PDF to images (first page only)
+        images = convert_from_bytes(pdf_bytes, fmt='jpeg', single_file=True)
+        
+        if not images:
+            raise HTTPException(status_code=500, detail="PDF has no pages")
+        
+        # Get first image
+        image = images[0]
+        
+        # Convert to RGB if necessary
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        # Save as JPEG
+        output = io.BytesIO()
+        image.save(output, format='JPEG', quality=95)
+        output.seek(0)
+        
+        return output.read()
+    except ImportError:
+        raise HTTPException(
+            status_code=500, 
+            detail="PDF support not available. Please install pdf2image and poppler."
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to convert PDF: {str(e)}")
+
+
+def convert_to_jpeg_if_needed(file: UploadFile) -> bytes:
+    """
+    Convert file to JPEG if it's HEIC or PDF format.
+    
+    Args:
+        file: Uploaded file
+        
+    Returns:
+        JPEG image bytes
+    """
+    image_bytes = file.file.read()
+    file.file.seek(0)  # Reset file pointer
+    
+    filename = file.filename.lower()
+    
+    # Check file extension
+    if filename.endswith(('.heic', '.heif')):
+        return convert_heic_to_jpeg(image_bytes)
+    elif filename.endswith('.pdf'):
+        return convert_pdf_to_jpeg(image_bytes)
+    else:
+        # Return as-is for standard image formats
+        return image_bytes
 
 
 class ModelFactory:
@@ -77,7 +181,7 @@ async def extract_text(file: UploadFile = File(...)):
     Extract text from uploaded image.
 
     Args:
-        file: Uploaded image file
+        file: Uploaded image file (supports JPEG, PNG, HEIC, HEIF, PDF)
 
     Returns:
         JSON response with extracted text
@@ -92,9 +196,10 @@ async def extract_text(file: UploadFile = File(...)):
         model = get_model()
         logger.info("Model loaded successfully")
 
-        # Read image data
-        image_bytes = await file.read()
-        logger.info(f"Image data read, size: {len(image_bytes)} bytes")
+        # Convert to JPEG if needed (HEIC, HEIF, PDF)
+        logger.info("Converting file to JPEG if needed...")
+        image_bytes = convert_to_jpeg_if_needed(file)
+        logger.info(f"Image data ready, size: {len(image_bytes)} bytes")
 
         # Extract text
         logger.info("Starting text extraction...")

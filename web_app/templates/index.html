@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OCR Text Extractor</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.0.0/dist/markdown-it.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <div class="container mx-auto px-4 py-8">
@@ -24,11 +26,11 @@
                             <input 
                                 type="file" 
                                 id="imageInput" 
-                                accept="image/*"
+                                accept="image/*,.heic,.heif,.pdf"
                                 class="hidden"
                                 required
                             >
-                            <p class="text-gray-600">Drag and drop an image here, or click to select</p>
+                            <p class="text-gray-600">Drag and drop an image, HEIC, or PDF here, or click to select</p>
                         </div>
                     </div>
                     <button 
@@ -73,7 +75,7 @@
                 </div>
                 <div 
                     id="resultText" 
-                    class="bg-gray-50 p-4 rounded-lg border border-gray-200 min-h-32 font-mono text-sm"
+                    class="bg-gray-50 p-4 rounded-lg border border-gray-200 min-h-32 font-mono text-sm overflow-x-auto overflow-y-auto max-w-full"
                 ></div>
             </div>
 
@@ -108,11 +110,21 @@
         const loadingSection = document.getElementById('loadingSection');
         const dropZone = document.getElementById('dropZone');
 
-        // Initialize marked with HTML rendering enabled
-        marked.setOptions({
-            gfm: true,
-            breaks: true,
-            sanitize: false
+        // Initialize markdown-it with HTML rendering enabled and code highlighting
+        const md = window.markdownit({
+            html: true,
+            linkify: true,
+            typographer: true,
+            highlight: function(code, lang) {
+                if (lang && hljs.getLanguage(lang)) {
+                    try {
+                        return hljs.highlight(code, { language: lang }).value;
+                    } catch (err) {
+                        console.error('Highlight.js error:', err);
+                    }
+                }
+                return hljs.highlightAuto(code).value;
+            }
         });
 
         // State variables
@@ -296,15 +308,20 @@
             }
 
             if (isRendered) {
-                console.log('Rendering as markdown with HTML support');
-                // Render markdown with marked (handles both HTML tags and markdown syntax)
-                resultText.innerHTML = marked.parse(displayContent);
+                console.log('Rendering with markdown-it');
+                // Always render with markdown-it (handles both HTML tags and markdown syntax)
+                resultText.innerHTML = md.render(displayContent);
                 resultText.classList.remove('whitespace-pre-wrap');
                 resultText.classList.add('prose', 'max-w-none');
                 
                 // Add styling to images
                 resultText.querySelectorAll('img').forEach(img => {
                     img.classList.add('max-w-full', 'h-auto', 'my-4', 'rounded-lg', 'border', 'border-gray-300');
+                });
+                
+                // Apply syntax highlighting to code blocks
+                resultText.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block);
                 });
             } else {
                 console.log('Showing as raw text');
